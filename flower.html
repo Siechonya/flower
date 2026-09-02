@@ -178,7 +178,7 @@ const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-
 const QUALITY_PRESETS = {
   low:    { pixelRatio: 1.0, cloudSteps: 22, maxCloudSteps: 28 },
   medium: { pixelRatio: 1.5, cloudSteps: 32, maxCloudSteps: 40 },
-  high:   { pixelRatio: Math.min(window.devicePixelRatio || 1, 2.0), cloudSteps: 40, maxCloudSteps: 52 }
+  high:   { pixelRatio: Math.min(window.devicePixelRatio || 1, 2.5), cloudSteps: 40, maxCloudSteps: 52 }
 };
 let currentQuality = 'high';
 renderer.setPixelRatio(QUALITY_PRESETS[currentQuality].pixelRatio);
@@ -923,8 +923,8 @@ function updateFlow(dt){
   const targetSpeed = (keyboardForward + joystickForward) * 10.0 + (keyboardBack + joystickBack) * 4.5;
   flow.targetSpeed = clamp(targetSpeed, -4.5, 10.0);
   flow.speed=damp(flow.speed,flow.targetSpeed,1.6,dt);
-  const keyboardTurn = (input.right?1.0:0.0) - (input.left?1.0:0.0);
-  const turnInput = clamp(keyboardTurn + input.joyX, -1.0, 1.0);
+  const keyboardTurn = (input.left?1.0:0.0) - (input.right?1.0:0.0);
+  const turnInput = clamp(keyboardTurn - input.joyX, -1.0, 1.0);
   const speedFactor = Math.abs(flow.speed)/10;
   const turnRate = 0.55 + 0.75 * speedFactor;
   flow.yaw += turnInput * turnRate * dt;
@@ -1060,7 +1060,7 @@ function updateFogParticles(dt){
 }
 
 // ---------- 相机 / 景深 ----------
-let currentAperture=0.0002;
+let currentAperture=0.0;
 function updateCamera(dt){
   const stopFactor=clamp(1-Math.abs(flow.speed)/10, 0, 1);
   const dist=13-stopFactor*6.2;
@@ -1075,12 +1075,20 @@ function updateCamera(dt){
   camera.position.lerp(desired, 1-Math.exp(-dt*3.2));
   camera.lookAt(flow.pos.x, flow.pos.y+0.8, flow.pos.z);
   const focusDist=camera.position.distanceTo(flow.pos);
-  const targetAperture=0.0002+stopFactor*0.040;
-  currentAperture=damp(currentAperture, targetAperture, 2.5, dt);
+  // 仅在停下/接近停下时开启景深，移动时保持清晰
+  const dofActive = stopFactor > 0.6;
+  bokehPass.enabled = dofActive;
   const bu=bokehPass.uniforms||bokehPass.materialBokeh.uniforms;
-  bu.focus.value=focusDist;
-  bu.aperture.value=currentAperture;
-  bu.maxblur.value=0.008;
+  if(dofActive){
+    const targetAperture = 0.0004 + (stopFactor-0.6)*0.035;
+    currentAperture=damp(currentAperture, targetAperture, 2.5, dt);
+    bu.focus.value=focusDist;
+    bu.aperture.value=currentAperture;
+    bu.maxblur.value=0.006;
+  } else {
+    currentAperture=damp(currentAperture, 0.0, 3.0, dt);
+    bu.aperture.value=currentAperture;
+  }
 }
 
 // ---------- 每帧 uniform 更新 ----------
