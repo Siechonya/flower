@@ -708,7 +708,7 @@ rain.frustumCulled=false;
 scene.add(rain);
 
 // ---------- 地面雾气 ----------
-const FOG_PARTICLE_COUNT = 520;
+const FOG_PARTICLE_COUNT = 240;
 function createFogTexture(){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const ctx=c.getContext('2d');
@@ -733,7 +733,7 @@ for(let i=0;i<FOG_PARTICLE_COUNT;i++){
 }
 fogGeo.setAttribute('position', new THREE.BufferAttribute(fogPos,3));
 const fogMat = new THREE.PointsMaterial({
-  color:0xffffff, size:17, map:createFogTexture(), transparent:true, opacity:0.12,
+  color:0xffffff, size:10, map:createFogTexture(), transparent:true, opacity:0.06,
   depthWrite:false, blending:THREE.NormalBlending, sizeAttenuation:true
 });
 const fogParticles = new THREE.Points(fogGeo, fogMat);
@@ -1168,7 +1168,7 @@ function updateFogParticles(dt){
     if(Math.abs(arr[i*3+2]-camera.position.z)>100) arr[i*3+2]=camera.position.z+(Math.random()-0.5)*100;
   }
   fogGeo.attributes.position.needsUpdate=true;
-  fogMat.opacity=0.05+current.fogParticle*0.5;
+  fogMat.opacity=0.025+current.fogParticle*0.18;
 }
 
 // ---------- 篝火烟雾 ----------
