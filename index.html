@@ -74,6 +74,20 @@
     color:#fff; text-decoration:none; border-bottom:1px solid rgba(255,255,255,0.45); padding-bottom:1px;
   }
   #credit a:hover { border-bottom-color:#fff; }
+  #rotateTip {
+    position:fixed; inset:0; z-index:12; display:none; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(6,10,16,0.88); color:#fff; text-align:center; backdrop-filter:blur(8px);
+  }
+  #rotateTip .icon { font-size:52px; margin-bottom:14px; }
+  #rotateTip .title { font-size:18px; letter-spacing:0.22em; margin-bottom:8px; }
+  #rotateTip .desc { font-size:13px; color:rgba(255,255,255,0.72); margin-bottom:20px; letter-spacing:0.1em; }
+  #rotateTip button {
+    padding:10px 22px; border-radius:26px; border:1px solid rgba(255,255,255,0.55); background:rgba(255,255,255,0.08);
+    color:#fff; font-size:12px; letter-spacing:0.15em; cursor:pointer;
+  }
+  @media (pointer: coarse) and (orientation: portrait) {
+    #rotateTip { display:flex; }
+  }
   @media (pointer: coarse) {
     #joystick { display:flex; }
     #controls .desktop { display:none; }
@@ -103,6 +117,12 @@
 </div>
 <div id="credit">致谢参考：<a href="https://www.bilibili.com/video/BV15V8K6XEvS/?spm_id_from=333.1007.tianma.2-3-6.click&vd_source=9608277d599c49c2431feb235d7d885d" target="_blank" rel="noopener">Bilibili BV15V8K6XEvS</a></div>
 <div id="joystick"><div class="knob"></div></div>
+<div id="rotateTip">
+  <div class="icon">📱 ↻</div>
+  <div class="title">请将手机旋转为横屏</div>
+  <div class="desc">横屏可获得更完整的画面视野</div>
+  <button id="rotateSkipBtn">仍要竖屏进入</button>
+</div>
 <div id="overlay">
   <h1>花</h1>
   <p>F L O W E R</p>
@@ -203,6 +223,13 @@ scene.fog = new THREE.FogExp2(0xcfe8ff, 0.0035);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 50000);
 camera.position.set(0, 8, 16);
+function applyCameraFov(){
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
+  camera.fov = aspect < 1 ? 78 : 62;
+  camera.updateProjectionMatrix();
+}
+applyCameraFov();
 
 const sunDir = new THREE.Vector3(-0.45, 0.68, 0.35).normalize();
 
@@ -862,10 +889,23 @@ function setQuality(q){
 }
 qualityBtns.forEach(b=>b.addEventListener('click', ()=>{ setQuality(b.dataset.q); }));
 
-startBtn.addEventListener('click',()=>{
+// 手机横屏提示
+const rotateTip=document.getElementById('rotateTip');
+const rotateSkipBtn=document.getElementById('rotateSkipBtn');
+rotateSkipBtn.addEventListener('click', ()=>{ rotateTip.style.display='none'; });
+
+startBtn.addEventListener('click', async ()=>{
   overlay.classList.add('hidden');
   music.start();
   setTimeout(()=>overlay.style.display='none', 900);
+  try{
+    if(document.documentElement.requestFullscreen && !document.fullscreenElement){
+      await document.documentElement.requestFullscreen({ navigationUI:'hide' }).catch(()=>{});
+    }
+    if(screen.orientation && screen.orientation.lock){
+      await screen.orientation.lock('landscape').catch(()=>{});
+    }
+  }catch(e){}
 });
 musicBtn.addEventListener('click',()=>{
   music.setMusic(!music.musicOn);
@@ -1178,8 +1218,7 @@ function animate(){
 }
 
 window.addEventListener('resize',()=>{
-  camera.aspect=window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
+  applyCameraFov();
   renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });
