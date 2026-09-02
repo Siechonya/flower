@@ -391,7 +391,7 @@ const terrainMat = new THREE.ShaderMaterial({
       gl_FragColor=vec4(col,1.0);
     }`
 });
-const terrainGeo = new THREE.PlaneGeometry(900,900,200,200);
+const terrainGeo = new THREE.PlaneGeometry(2400,2400,320,320);
 terrainGeo.rotateX(-Math.PI/2);
 {
   const pos=terrainGeo.attributes.position;
@@ -642,15 +642,20 @@ rain.frustumCulled=false;
 scene.add(rain);
 
 // ---------- 地面雾气 ----------
-const FOG_PARTICLE_COUNT = 320;
+const FOG_PARTICLE_COUNT = 520;
 function createFogTexture(){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const ctx=c.getContext('2d');
-  const g=ctx.createRadialGradient(64,64,0,64,64,64);
-  g.addColorStop(0,'rgba(255,255,255,1)');
-  g.addColorStop(0.45,'rgba(255,255,255,0.55)');
-  g.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=g; ctx.fillRect(0,0,128,128);
+  ctx.fillStyle='#fff';
+  for(let i=0;i<16;i++){
+    const x=Math.random()*128, y=Math.random()*128, r=8+Math.random()*22;
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,'rgba(255,255,255,0.9)');
+    g.addColorStop(0.5,'rgba(255,255,255,0.28)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g;
+    ctx.fillRect(x-r,y-r,r*2,r*2);
+  }
   return new THREE.CanvasTexture(c);
 }
 const fogGeo = new THREE.BufferGeometry();
@@ -662,7 +667,7 @@ for(let i=0;i<FOG_PARTICLE_COUNT;i++){
 }
 fogGeo.setAttribute('position', new THREE.BufferAttribute(fogPos,3));
 const fogMat = new THREE.PointsMaterial({
-  color:0xffffff, size:14, map:createFogTexture(), transparent:true, opacity:0.12,
+  color:0xffffff, size:17, map:createFogTexture(), transparent:true, opacity:0.12,
   depthWrite:false, blending:THREE.NormalBlending, sizeAttenuation:true
 });
 const fogParticles = new THREE.Points(fogGeo, fogMat);
@@ -978,17 +983,16 @@ function updateFlow(dt){
   const speedFactor = Math.abs(flow.speed)/10;
   const turnRate = 0.55 + 0.75 * speedFactor;
   flow.yaw += turnInput * turnRate * dt;
-  if(Math.abs(turnInput)<0.01 && flow.speed<0.5){
-    // 静止时极缓慢的环绕，保持电影感
-    flow.yaw += Math.sin(time*0.15)*0.03*dt;
-  }
   flow.pitch=damp(flow.pitch,0,2.0,dt);
-  // 边界转向
   const p=flow.pos;
-  if(p.x>115) flow.yaw+=dt*0.7;
-  if(p.x<-115) flow.yaw-=dt*0.7;
-  if(p.z>115) flow.yaw+=dt*0.7;
-  if(p.z<-115) flow.yaw-=dt*0.7;
+  const wanderLimit=135;
+  const dx=p.x, dz=p.z;
+  const distCenter=Math.sqrt(dx*dx+dz*dz);
+  if(distCenter>wanderLimit){
+    const soft=Math.min(1, (distCenter-wanderLimit)/120);
+    p.x-=dx/distCenter*soft*10;
+    p.z-=dz/distCenter*soft*10;
+  }
   const dir=new THREE.Vector3(Math.sin(flow.yaw)*Math.cos(flow.pitch), Math.sin(flow.pitch), Math.cos(flow.yaw)*Math.cos(flow.pitch));
   flow.vel.lerp(dir, 1-Math.exp(-dt*2.2));
   p.addScaledVector(flow.vel, flow.speed*dt);
@@ -1109,12 +1113,163 @@ function updateFogParticles(dt){
   fogMat.opacity=0.05+current.fogParticle*0.5;
 }
 
+// ---------- 篝火烟雾 ----------
+const SMOKE_EMITTERS=[
+  {x:35,z:28},
+  {x:-45,z:52},
+  {x:20,z:-65}
+];
+const SMOKE_COUNT=SMOKE_EMITTERS.length*42;
+const smokeGeo=new THREE.BufferGeometry();
+const smokePos=new Float32Array(SMOKE_COUNT*3);
+const smokePhase=new Float32Array(SMOKE_COUNT);
+const smokeSize=new Float32Array(SMOKE_COUNT);
+const smokeSpeed=new Float32Array(SMOKE_COUNT);
+for(let i=0;i<SMOKE_COUNT;i++){
+  const e=SMOKE_EMITTERS[i%SMOKE_EMITTERS.length];
+  const y=terrainHeight(e.x,e.z);
+  smokePos[i*3]=e.x+(Math.random()-0.5)*0.35;
+  smokePos[i*3+1]=y+0.35;
+  smokePos[i*3+2]=e.z+(Math.random()-0.5)*0.35;
+  smokePhase[i]=Math.random();
+  smokeSize[i]=2.5+Math.random()*5.5;
+  smokeSpeed[i]=0.75+Math.random()*0.75;
+}
+smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePos,3));
+smokeGeo.setAttribute('aPhase', new THREE.BufferAttribute(smokePhase,1));
+smokeGeo.setAttribute('aSize', new THREE.BufferAttribute(smokeSize,1));
+smokeGeo.setAttribute('aSpeed', new THREE.BufferAttribute(smokeSpeed,1));
+const smokeMat=new THREE.ShaderMaterial({
+  transparent:true, depthWrite:false, blending:THREE.NormalBlending,
+  uniforms:{
+    uTime:{value:0},
+    uWind:{value:0.4},
+    uColor:{value:new THREE.Color(0xffffff)}
+  },
+  vertexShader:`uniform float uTime; uniform float uWind;
+    attribute float aPhase; attribute float aSize; attribute float aSpeed;
+    varying float vAlpha;
+    void main(){
+      vec3 pos=position;
+      float t=fract(uTime*0.05+aPhase);
+      pos.y += t*3.8*aSpeed;
+      pos.x += sin(uTime*0.4+aPhase*6.2831)*0.5*t + uWind*t*2.2;
+      pos.z += cos(uTime*0.35+aPhase*4.0)*0.5*t;
+      vAlpha=sin(t*3.14159);
+      vec4 mv=modelViewMatrix*vec4(pos,1.0);
+      gl_PointSize=clamp(aSize*(1.0+t*2.8)*(240.0/-mv.z), 2.0, 48.0);
+      gl_Position=projectionMatrix*mv;
+    }`,
+  fragmentShader:`uniform vec3 uColor; varying float vAlpha;
+    void main(){
+      float d=length(gl_PointCoord-0.5);
+      float a=smoothstep(0.5,0.12,d)*vAlpha;
+      gl_FragColor=vec4(uColor, a*0.42);
+    }`
+});
+const smokeParticles=new THREE.Points(smokeGeo, smokeMat);
+smokeParticles.renderOrder=6;
+smokeParticles.frustumCulled=false;
+scene.add(smokeParticles);
+SMOKE_EMITTERS.forEach(e=>{
+  const y=terrainHeight(e.x,e.z);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.13,6,12), new THREE.MeshStandardMaterial({color:0x8a8a8a, roughness:0.9, metalness:0}));
+  ring.rotation.x=-Math.PI/2;
+  ring.position.set(e.x,y+0.06,e.z);
+  scene.add(ring);
+  const ember=new THREE.Mesh(new THREE.SphereGeometry(0.16,6,5), new THREE.MeshStandardMaterial({color:0xff8833, emissive:0xff4411, emissiveIntensity:1.4, roughness:0.4}));
+  ember.position.set(e.x,y+0.22,e.z);
+  scene.add(ember);
+});
+
+// ---------- 风车 ----------
+const windmill=new THREE.Group();
+const windmillTower=new THREE.Mesh(new THREE.CylinderGeometry(0.85,1.15,3.6,8), new THREE.MeshStandardMaterial({color:0xe7d9b8, roughness:0.7}));
+windmillTower.position.y=1.8;
+windmill.add(windmillTower);
+const windmillRoof=new THREE.Mesh(new THREE.ConeGeometry(1.25,1.8,8), new THREE.MeshStandardMaterial({color:0x8a5a3b, roughness:0.6}));
+windmillRoof.position.y=3.6+0.9;
+windmill.add(windmillRoof);
+const windmillBlades=new THREE.Group();
+const bladeMat=new THREE.MeshStandardMaterial({color:0xf5ead0, roughness:0.55, side:THREE.DoubleSide});
+for(let i=0;i<4;i++){
+  const blade=new THREE.Mesh(new THREE.BoxGeometry(0.14,2.8,0.05), bladeMat);
+  blade.position.y=1.35;
+  blade.rotation.z=i*Math.PI/2;
+  windmillBlades.add(blade);
+}
+windmillBlades.position.set(0,4.25,0.25);
+windmill.add(windmillBlades);
+windmill.position.set(70, terrainHeight(70,60), 60);
+scene.add(windmill);
+
+// ---------- 巨石阵 ----------
+const stoneMat=new THREE.MeshStandardMaterial({color:0x9a9a9a, roughness:0.85, metalness:0});
+const stoneCircleCenter={x:-60,z:-55};
+const stoneCircleRadius=9;
+const stoneCount=9;
+for(let i=0;i<stoneCount;i++){
+  const a=i/stoneCount*Math.PI*2;
+  const x=stoneCircleCenter.x+Math.cos(a)*stoneCircleRadius;
+  const z=stoneCircleCenter.z+Math.sin(a)*stoneCircleRadius;
+  const y=terrainHeight(x,z);
+  const h=2.4+Math.random()*1.2;
+  const stone=new THREE.Mesh(new THREE.BoxGeometry(0.8,h,0.42), stoneMat);
+  stone.position.set(x,y+h/2-0.05,z);
+  stone.rotation.y=Math.random()*Math.PI;
+  stone.rotation.z=(Math.random()-0.5)*0.12;
+  scene.add(stone);
+}
+const altarStone=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.35,1.0), stoneMat);
+altarStone.position.set(stoneCircleCenter.x, terrainHeight(stoneCircleCenter.x,stoneCircleCenter.z)+0.18, stoneCircleCenter.z);
+scene.add(altarStone);
+
+// ---------- 花树 ----------
+const BLOOM_COUNT=90;
+const bloomTrunks=new THREE.InstancedMesh(trunkGeo, trunkMat, BLOOM_COUNT);
+bloomTrunks.renderOrder=1;
+bloomTrunks.frustumCulled=false;
+const bloomCrownGeo=new THREE.SphereGeometry(1.05,7,6);
+bloomCrownGeo.scale(1,0.9,1);
+const bloomCrownMat=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.55, metalness:0});
+const bloomCrowns=new THREE.InstancedMesh(bloomCrownGeo, bloomCrownMat, BLOOM_COUNT);
+bloomCrowns.renderOrder=1;
+bloomCrowns.frustumCulled=false;
+{
+  const m=new THREE.Matrix4(), q=new THREE.Quaternion(), s=new THREE.Vector3(), p=new THREE.Vector3();
+  const up=new THREE.Vector3(0,1,0);
+  const palette=[0xffd7e8,0xffc2d4,0xfff0f5,0xffb3c8,0xffffff,0xffe0ec];
+  for(let i=0;i<BLOOM_COUNT;i++){
+    const angle=Math.random()*Math.PI*2;
+    const radius=120+Math.random()*180;
+    const x=Math.cos(angle)*radius, z=Math.sin(angle)*radius;
+    const y=terrainHeight(x,z);
+    const sc=0.7+Math.random()*0.9;
+    p.set(x,y,z);
+    q.setFromAxisAngle(up, Math.random()*Math.PI*2);
+    s.set(sc*0.9,sc,sc*0.9);
+    m.compose(p,q,s);
+    bloomTrunks.setMatrixAt(i,m);
+    p.set(x,y+1.55*sc,z);
+    s.set(sc*1.15,sc*1.15,sc*1.15);
+    m.compose(p,q,s);
+    bloomCrowns.setMatrixAt(i,m);
+    bloomTrunks.setColorAt(i, new THREE.Color(0x6d4c33));
+    bloomCrowns.setColorAt(i, new THREE.Color(palette[Math.floor(Math.random()*palette.length)]));
+  }
+  bloomTrunks.instanceMatrix.needsUpdate=true;
+  bloomCrowns.instanceMatrix.needsUpdate=true;
+  if(bloomTrunks.instanceColor) bloomTrunks.instanceColor.needsUpdate=true;
+  if(bloomCrowns.instanceColor) bloomCrowns.instanceColor.needsUpdate=true;
+}
+scene.add(bloomTrunks); scene.add(bloomCrowns);
+
 // ---------- 相机 / 景深 ----------
 let currentAperture=0.0;
 function updateCamera(dt){
   const stopFactor=clamp(1-Math.abs(flow.speed)/10, 0, 1);
   const dist=13-stopFactor*6.2;
-  const camAngle=flow.yaw+Math.PI+(stopFactor*Math.sin(time*0.16)*0.7);
+  const camAngle=flow.yaw+Math.PI;
   const desired=new THREE.Vector3(
     flow.pos.x+Math.sin(camAngle)*dist+pointer.x*3.5,
     flow.pos.y+3.0+stopFactor*1.6+pointer.y*1.5,
@@ -1175,6 +1330,9 @@ function updateUniforms(){
   grassMat.uniforms.uFogDensity.value=current.fogDensity;
   grassMat.uniforms.uCloudShadowStrength.value=0.12+current.cloudCover*0.40;
 
+  smokeMat.uniforms.uTime.value=time;
+  smokeMat.uniforms.uWind.value=current.wind;
+
   scene.fog.color.copy(currentColor.fogColor);
   scene.fog.density=current.fogDensity;
   scene.background.copy(currentColor.fogColor);
@@ -1202,6 +1360,7 @@ function animate(){
   const dt=Math.min(clock.getDelta(), 0.05);
   time+=dt;
   updateWeather(dt);
+  windmillBlades.rotation.z += dt*(1.2+current.wind*3.0);
   updateFlow(dt);
   updatePetals(dt);
   updateFlowers(dt);
