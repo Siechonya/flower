@@ -1,0 +1,4 @@
+﻿# SSH deploy key - never commit
+github_deploy_key
+github_deploy_key.pub
+_check*
