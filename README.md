@@ -1,36 +1,19 @@
-# 花 · Flower
+# 降临 · 小说在线阅读站
 
-一个网页端 3D 互动场景，致敬陈星汉《花》。部署就绪，可直接托管到 Vercel。
+部署地址：[flower.sicho.cn](https://flower.sicho.cn)（推送 `main` 分支后由 Vercel 自动构建部署）。
 
-## 运行
-需要联网加载 Three.js（CDN）。直接双击 `index.html`，或启动本地服务器：
+## 目录结构
 
-```bash
-# 在 D:\flower 目录
-python -m http.server 8080
+- `index.html` / `styles.css` / `app.js`：纯静态极简文学阅读前端，零外部运行依赖。
+- `data/toc.json` & `data/chapters/*.json`：由源文稿生成的章节索引与正文数据。
+- `scripts/build.py`：从本地小说正典目录提取并清理 Obsidian 语法后生成静态数据。
+- `vercel.json`：Vercel 静态资源缓存策略配置。
+
+## 本地同步与更新发布
+
+```powershell
+python scripts/build.py
+git add -A
+git commit -m "chore: update novel chapters"
+git push origin main
 ```
-
-然后打开 http://localhost:8080/index.html
-
-## 操作
-- 桌面端：`W` 前进 · `S` 后退 · `A / D` 转向 · 鼠标移动镜头微移
-- 手机端：使用左下角虚拟摇杆移动 / 转向
-- 松开按键 / 摇杆：停下，镜头自动拉近并出现景深效果
-- 花瓣飘过之处，地面逐渐长出花朵
-
-## 画质
-右上方（桌面端为左上方面板）可切换 低 / 中 / 高 画质，动态调整渲染分辨率与体积云步进数。
-
-## 特性
-- 风格化起伏草地，风吹麦浪
-- 大范围无缝地形，雾中远景自然消隐
-- 体积云与阳光，云影扫过地面
-- 多种花型（雏菊 / 郁金香 / 虞美人）、松树、花树、岩石
-- 风车、巨石阵、篝火烟雾营地
-- 花瓣群、分层地面雾气、雨、天气循环
-- 停下拉近时的轻微景深（Bokeh DOF）
-- 电影化调色：ACES + 暗角 + 颗粒
-- 程序化生成 BGM（和弦铺底、五声音阶风铃、风/雨声）
-
-## Vercel 部署
-仓库根目录的 `index.html` 即入口，直接导入 Vercel 即可。
